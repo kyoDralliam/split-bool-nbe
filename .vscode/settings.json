@@ -1,0 +1,6 @@
+{
+  "ocaml.sandbox": {
+    "kind": "opam",
+    "switch": "coq-8.17"
+  }
+}
