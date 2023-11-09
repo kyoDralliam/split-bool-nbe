@@ -34,7 +34,8 @@ module type Splitter = sig
   val ret : 'a -> 'a t
   val bind : 'a t -> ('a -> 'b t) -> 'b t
   val map : ('a -> 'b) -> 'a t -> 'b t
-  val get_split : o -> bool t
+  (* val get_split : o -> bool t *)
+  val split : o -> 'a t -> 'a t -> 'a t
   val filter : (o -> bool) -> 'a t -> ((o,'a) case_tree) t
 
   val run : 'a t -> (o, 'a) case_tree
@@ -110,11 +111,12 @@ struct
 
   let bind m f = normalize (bind_aux m f)
 
-  let get_split lbl = Split {
+  (* let get_split lbl = Split {
       lbl ;
       onl = Leaf true ;
       onr = Leaf false
-    }
+    } *)
+
 
   let rec filter p (m : 'a t) : ((O.t,'a) case_tree) t  =
     match m with

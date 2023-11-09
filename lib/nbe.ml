@@ -3,34 +3,25 @@ open Splitter
 module Tm = Term
 module NeNf = Tm.NeNf
 
-module M = TreeSplitter(Term.NeOrd)
+module LevelNeOrd : Map.OrderedType with type t = (int * NeNf.ne) =
+struct
+  type t = int * NeNf.ne
+  let compare (k1,ne1) (k2,ne2) =
+    let ck = Int.compare k1 k2 in
+    if ck = 0 then Tm.NeOrd.compare ne1 ne2 else ck
+end
+
+module M = TreeSplitter(LevelNeOrd)
 module MN = Notations(M)
 open MN
 
 open Domain
 
-(*
-module type NbeSpec = sig
-  
-  val do_app : int -> t -> t -> t M.t
-  val do_split : int -> ne -> t M.t
-  val do_clos : int -> clos -> t -> t M.t
-  val eval : int -> Tm.tm -> env -> t M.t
-  
-  val read_back_nf : int -> nf -> Tm.NeNf.nf M.t
-
-  val from_case_tree : (NeNf.ne, NeNf.pnf) case_tree -> NeNf.nf
-
-  val read_back_case_tree : int -> nf M.t -> NeNf.nf
-  val read_back_pnf : int -> t -> t -> Tm.NeNf.pnf M.t
-  val read_back_ne : int -> t -> ne -> Tm.NeNf.ne M.t
-
-end*)
 
 let rec from_case_tree = function
   | Leaf t -> NeNf.pnf_nf t
   | Split {lbl ; onl ; onr } ->
-    NeNf.case lbl (from_case_tree onl) (from_case_tree onr)
+    NeNf.case (snd lbl) (from_case_tree onl) (from_case_tree onr)
 
 let rec do_app i (fn : t) (arg : t) =
   match fn with
@@ -42,13 +33,20 @@ let rec do_app i (fn : t) (arg : t) =
     M.ret @@ NfNe { ty ; ne }
   | _ -> failwith "Not a function"
 
-(* and do_split i (ne : ne) = ? *)
 and do_clos i (Clos { env ; body }) arg = 
   eval i body (arg :: env)
 
+and do_split : type a. int -> ne -> a -> a -> a M.t = 
+  fun i ne brT brF ->
+  let* tne = read_back_ne i ne in
+  let (j, stne) = NeNf.to_canonical_index tne in
+  M.split (i - j,stne) (M.ret brT) (M.ret brF)
+
 and eval i t env = 
   match t with
-  | Tm.Var i -> M.ret @@ List.nth env i
+  | Tm.Var i -> 
+    (* Format.printf "Var : %d, #|env| : %d@\n" i (List.length env) ;  *)
+    M.ret @@ List.nth env i
   | Tm.Pi { dom ; cod } ->
     let* dom = eval i dom env in
     let cod = Clos { env ; body = cod } in
@@ -71,9 +69,9 @@ and eval i t env =
     | NfTrue -> eval i brT env
     | NfFalse -> eval i brF env
     | NfNe { ty = _ ; ne } ->
-      let* tne = read_back_ne i ne in
-      let+ b = M.get_split tne in 
-      if b then NfTrue else NfFalse
+      let* onT = eval i brT env in
+      let* onF = eval i brF env in
+      do_split i ne onT onF
     | _ -> failwith "Discriminee does not evaluate to a boolean"
     end
   | U -> 
@@ -86,7 +84,7 @@ and read_back_case_tree i m =
     let* (Normal { ty ; tm }) = m in
     read_back_pnf i ty tm 
   in 
-  let+ ct = M.filter (NeNf.contains_var 0) m in
+  let+ ct = M.filter (fun x -> fst x = i) m in
   from_case_tree ct
 
 and read_back_pnf i ty t : NeNf.pnf M.t =
@@ -120,8 +118,8 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
     | NfU -> 
       M.ret @@ NeNf.univ
     | NfNe { ty = _ ; ne } -> 
-      M.map (NeNf.ne_pnf NeNf.univ) (read_back_ne i ne)
-    | _ -> failwith "Not a valid type"
+      M.map (fun x -> NeNf.ne_pnf NeNf.univ x) (read_back_ne i ne)
+    | _ -> failwith "Not a valid code of universe"
     end
   | NfBool -> 
     begin match t with
@@ -130,16 +128,14 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
     | NfFalse ->
       M.ret @@ NeNf.bfalse
     | NfNe { ty = _ ; ne } -> 
-      let* tne = read_back_ne i ne in 
-      let+ b = M.get_split tne in 
-      if b then NeNf.btrue else NeNf.bfalse
+      do_split i ne NeNf.btrue NeNf.bfalse
     | _ -> failwith "Not a valid bool"
     end
   | NfNe { ne = ty ; _ } ->
     begin match t with
     | NfNe { ne ; _ } ->
       let* ty = 
-        M.map (NeNf.ne_pnf NeNf.univ) @@ read_back_ne i ty
+        M.map (fun x -> NeNf.ne_pnf NeNf.univ x) @@ read_back_ne i ty
       in
       let* t = read_back_ne i ne in
       M.ret @@ NeNf.ne_pnf ty t
@@ -147,15 +143,18 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
     end
   | _ -> failwith "Not a valid type"
 
-and read_back_ne i ne =
+and read_back_ne i ne : NeNf.ne M.t =
   match ne with
-  | NeVar k -> M.ret @@ NeNf.var (i - k - 1)
+  | NeVar k -> M.ret @@ NeNf.var (i - k)
   | NeApp {fn ; arg = Normal { ty ; tm }} -> 
     let* f = read_back_ne i fn in
     let* arg = read_back_pnf i ty tm in
     M.ret @@ NeNf.app f arg
 
 
+let norm_ty i (env : env) (ty : Tm.tm) : NeNf.pnf M.t =
+  let* sty = eval i ty env in
+  read_back_pnf i NfU sty
 
 let norm (ctx : Tm.tm list) (ty : Tm.tm) (t : Tm.tm) : NeNf.pnf M.t =
   let* (i, env) = 
@@ -170,56 +169,3 @@ let norm (ctx : Tm.tm list) (ty : Tm.tm) (t : Tm.tm) : NeNf.pnf M.t =
   let* ty = eval i ty env in 
   let* tm = eval i t env in
   read_back_pnf i ty tm 
-
-
-(*
-and read_back_pnf i ty t =
-  match t with
-  | NfPi { dom ; cod } ->
-    let var0 = NeNf { ty = dom ; ne = NeVar i } in
-    let* dom  = read_back_pnf i NfU dom in
-    let* cod = 
-      do_clos (i+1) cod var0
-      |> M.map (fun tm -> Normal { ty = NfU ; tm })
-      |> read_back_case_tree i 
-    in
-    M.ret @@ NeNf.pi dom cod
-  | NfLam t ->
-    begin match ty with
-    | NfPi { dom ; cod } -> 
-      let var0 = NeNf { ty = dom ; ne = NeVar i } in
-      let* dom  = read_back_pnf i NfU dom in
-      let* body = 
-        let body =
-          let* ty = do_clos (i+1) cod var0 in 
-          let* tm = do_clos (i+1) t var0 in
-          Normal {ty ; tm}
-        in 
-        read_back_case_tree i body
-      in 
-      M.ret @@ NeNf.lam dom body
-    | _ -> failwith "In RB pnf: not a Pi"
-    end
-  | NfBool -> 
-    M.ret @@ NeNf.bool
-  | NfU ->
-    M.ret @@ NeNf.univ
-  | NfNe { ty ; ne } -> 
-    read_back_ne i ty ne
-  | NfTrue -> 
-    M.ret @@ NeNf.btrue
-  | NfFalse ->
-    M.ret @@ NeNf.bfalse
-
-and read_back_ne i ty ne =
-  match ty with
-  | NfPi { dom ; cod } -> ?
-  | NfU -> 
-    match ne with
-    | NeVar k -> NeNf.var (i - k - 1)
-    | NeApp { fn ; arg } -> 
-  | NfBool -> ?
-  | NfNe { ty = _ ; ne } -> ?
-
-
-*)

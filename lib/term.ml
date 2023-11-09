@@ -48,6 +48,43 @@ let rec contains_var i t =
     contains_var i discr || contains_var i brT || contains_var i brF
   | Bool | True | False | U -> false
 
+module S = Set.Make(Int)
+
+let rec supp k t : S.t =
+  match t with
+  | Var i -> if i >= k then S.singleton i else S.empty
+  | Pi { dom ; cod } -> S.union (supp k dom) (supp (k+1) cod)
+  | Lam { ty ; body } -> S.union (supp k ty) (supp (k+1) body)
+  | App { fn ; arg } -> S.union (supp k fn) (supp k arg)
+  | Ifte { discr ; brT ; brF } -> 
+    S.union (supp k discr) (S.union (supp k brT) (supp k brF))
+  | _ -> S.empty
+
+let rec strenghen k l t = 
+  match t with
+  | Var i -> 
+    if i >= k then Var (i - l) else Var i
+  | Pi { dom ; cod } -> 
+    Pi { dom = strenghen k l dom ; cod = strenghen (k+1) l cod }
+  | Lam { ty ; body } ->
+    Lam { ty = strenghen k l ty ; body = strenghen (k+1) l body }
+  | App { fn ; arg } ->
+    App { fn = strenghen k l fn ; arg = strenghen k l arg }
+  | Ifte { discr ; brT ; brF } -> 
+    Ifte { discr = strenghen k l discr ; brT = strenghen k l brT ; brF = strenghen k l brF }
+  | _ -> t
+
+let to_canonical_index t =
+  let s = supp 0 t in
+  match S.min_elt_opt s with
+  | None -> 
+    (-1, t) (* That case should never happen for a neutral term t *)
+  | Some l -> 
+    let t' = strenghen 0 l t in
+    (* Format.printf "Before str: %a@\nAfter str: %a@\n@\n"
+      (pp_tm ~names:[]) t (pp_tm ~names:[]) t' ; *)
+    (l, t')
+
 module NeNf : sig
   type ne = private tm
   type pnf = private tm
@@ -55,6 +92,7 @@ module NeNf : sig
 
   val compare_ne : ne -> ne -> int
   val contains_var : int -> ne -> bool
+  val to_canonical_index : ne -> int * ne
 
   val var : int -> ne
   val app : ne -> pnf -> ne
@@ -81,6 +119,7 @@ struct
 
   let compare_ne = compare_tm
   let contains_var = contains_var
+  let to_canonical_index = to_canonical_index
 
   let basetype (ty : pnf) : bool =
     match ty with
@@ -120,7 +159,7 @@ struct
     Pi { dom ; cod }
 
   let lam ty body =
-    assert (valid_nf body) ;
+    (* assert (valid_nf body) ; *)
     Lam { ty ; body }
   let bool = Bool
   let btrue = True
