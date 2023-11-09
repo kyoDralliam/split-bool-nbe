@@ -27,7 +27,7 @@ let push { len ; ctx ; sctx } ty =
 
 let rec wk k t n = 
   match t with
-  | Var i -> if i <= k then Var i else Var (i+n)
+  | Var i -> if i < k then Var i else Var (i+n)
   | Pi {dom; cod} -> Pi { dom = wk k dom n ; cod = wk (k+1) cod n }
   | Lam {ty ; body} -> Lam {ty = wk k ty n ; body = wk (k+1) body n }
   | App {fn ; arg} -> App {fn = wk k fn n ; arg = wk k arg n}
@@ -35,7 +35,8 @@ let rec wk k t n =
     Ifte { discr = wk k discr n ; brT = wk k brT n ; brF = wk k brF n }
   | cst -> cst
 
-let wk1 t = wk 0 t 1
+let wkn n t = wk 0 t n
+let wk1 = wkn 1
 
 let rec subst k t u = 
   match t with
@@ -63,7 +64,10 @@ let conv_ty  (ctx : ctx) (a : tm) (b : tm) : r M.t =
 
 let rec infer (ctx : ctx) (t : tm) : (tm option) M.t =
   match t with
-  | Var i -> M.ret @@ List.nth_opt ctx.ctx i
+  | Var i -> 
+    List.nth_opt ctx.ctx i
+    |> Option.map (wkn (i+1)) 
+    |> M.ret
   | Pi { dom ; cod } ->
     let$ () = check ctx dom U in
     let* ctx' = push ctx dom in 
