@@ -80,23 +80,35 @@ and eval i t env =
 (* and read_back_nf i nf = ? *)
 
 and read_back_case_tree i m = 
-  let m =
-    let* (Normal { ty ; tm }) = m in
-    read_back_pnf i ty tm 
-  in 
   let+ ct = M.filter (fun x -> fst x = i) m in
   from_case_tree ct
+
+and read_back_ty i ty : NeNf.pnf M.t =
+  match ty with
+  | NfPi { dom ; cod } ->
+    let var0 = NfNe { ty = dom ; ne = NeVar i } in
+    let* dom  = read_back_ty i dom in
+    let* cod = read_back_case_tree i (let* tm = do_clos (i+1) cod var0 in read_back_ty (i+1) tm) in
+    M.ret @@ NeNf.pi dom cod
+  | NfBool -> 
+    M.ret @@ NeNf.bool
+  | NfU -> 
+    M.ret @@ NeNf.univ
+  | NfNe { ty = _ ; ne } -> 
+    M.map (fun x -> NeNf.ne_pnf NeNf.univ x) (read_back_ne i ne)
+  | _ -> failwith "Not a valid code of universe"
+
 
 and read_back_pnf i ty t : NeNf.pnf M.t =
   match ty with
   | NfPi { dom ; cod } ->
       let var0 = NfNe { ty = dom ; ne = NeVar i } in
-      let* dom  = read_back_pnf i NfU dom in
+      let* dom  = read_back_ty i dom in
       let* body = 
         let body =
           let* ty = do_clos (i+1) cod var0 in 
           let* tm = do_app (i+1) t var0 in
-          M.ret @@ Normal {ty ; tm}
+          read_back_pnf (i+1) ty tm
         in 
         read_back_case_tree i body
       in 
@@ -105,20 +117,16 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
     begin match t with
     | NfPi { dom ; cod } ->
       let var0 = NfNe { ty = dom ; ne = NeVar i } in
-      let* dom  = read_back_pnf i NfU dom in
+      let* dom  = read_back_ty i dom in
       let* cod = 
-        do_clos (i+1) cod var0
-        |> M.map (fun tm -> Normal { ty = NfU ; tm })
-        |> read_back_case_tree i 
+        read_back_case_tree i (let* t = do_clos (i+1) cod var0 in read_back_ty (i+1) t)
       in
       M.ret @@ NeNf.pi dom cod
     | NfBool -> 
       M.ret @@ NeNf.bool
-    (* Type in Type ??? *)
-    | NfU -> 
-      M.ret @@ NeNf.univ
     | NfNe { ty = _ ; ne } -> 
       M.map (fun x -> NeNf.ne_pnf NeNf.univ x) (read_back_ne i ne)
+    | NfU ->  failwith "Type in Type"
     | _ -> failwith "Not a valid code of universe"
     end
   | NfBool -> 
@@ -154,7 +162,7 @@ and read_back_ne i ne : NeNf.ne M.t =
 
 let norm_ty i (env : env) (ty : Tm.tm) : NeNf.pnf M.t =
   let* sty = eval i ty env in
-  read_back_pnf i NfU sty
+  read_back_ty i sty
 
 let norm (ctx : Tm.tm list) (ty : Tm.tm) (t : Tm.tm) : NeNf.pnf M.t =
   let* (i, env) = 

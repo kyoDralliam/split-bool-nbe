@@ -24,6 +24,12 @@ let print_inst (inst : inst) =
 let check_inst (inst : inst) =
   Typecheck.full_check_tm (List.map snd inst.ctx) inst.tm inst.ty
 
+let check_inst_dbg (inst : inst) =
+  Typecheck.full_check_tm_dbg (List.map snd inst.ctx) inst.tm inst.ty
+
+let infer_inst (inst : inst) =
+  Typecheck.full_infer (List.map snd inst.ctx) inst.tm
+
 
 let ex1 = {
   ctx = ["b", Bool] ;
@@ -103,3 +109,24 @@ let boolExt3 = {
 let examples = [ ex1 ; ex2 ; ex3 ; ex4 ; ex5 ; id_bool_inst ; boolExt1 ; boolExt2 ; boolExt3 ]
 
 let check_all_examples () = List.for_all check_inst examples
+
+
+let btob = pi Bool Bool
+
+let funFunny = {
+  ctx = [
+    "f", ifte (Var 0) (pi btob Bool) (pi btob btob) ;
+    "b", Bool
+  ] ;
+  ty = ifte (Var 1) (pi btob Bool) (pi btob btob) ;
+  tm = Var 0
+}
+
+let appFunFunny = {
+  ctx = [
+    "f", ifte (Var 0) (pi btob Bool) (pi btob btob) ;
+    "b", Bool
+  ] ;
+  ty = ifte (Var 1) Bool btob ;
+  tm = Var 0 @* (lam Bool (Var 0))
+}

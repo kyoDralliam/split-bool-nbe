@@ -17,6 +17,12 @@ let ( let$ ) (m : ('a option) M.t) (f : 'a -> ('b option) M.t) : ('b option) M.t
   | None -> M.ret None
   | Some a -> f a
 
+exception LocalEscape
+
+let distr (m : ('a option) M.t) : ('a M.t) option =
+  try Some (let* x = m in match x with None -> raise LocalEscape | Some x -> M.ret x)
+  with LocalEscape -> None
+
 type ctx = { len : int ; ctx : tm list ; sctx : D.env }
 
 let empty_ctx = { len = 0 ; ctx = [] ; sctx = [] }
@@ -60,6 +66,13 @@ let conv_ty  (ctx : ctx) (a : tm) (b : tm) : r M.t =
   let* nb = read_back_pnf i NfU b in
   M.ret @@ (na = nb) *)
 
+let rec reify_case_tree (m : (LevelNeOrd.t, tm) Splitter.case_tree) : tm =
+  let open Splitter in
+  match m with
+  | Leaf t -> t
+  | Split { lbl ; onl ; onr } ->
+      Ifte { discr = (snd lbl :> tm) ; brT = reify_case_tree onl ; brF = reify_case_tree onr }
+
 
 
 let rec infer (ctx : ctx) (t : tm) : (tm option) M.t =
@@ -76,8 +89,12 @@ let rec infer (ctx : ctx) (t : tm) : (tm option) M.t =
   | Lam { ty ; body } ->
     let$ () = check_ty ctx ty in
     let* ctx' = push ctx ty in
-    let$ cod = infer ctx' body in
-    ret @@ Pi { dom = ty ;  cod }
+    begin match distr (infer ctx' body) with
+    | None -> M.ret None
+    | Some cod0 ->
+      let* cod = M.filter (fun lvl -> fst lvl = ctx'.len) cod0 in
+      ret @@ Pi { dom = ty ; cod = reify_case_tree cod }
+    end
   | App { fn ; arg } ->
     let$ fnty = infer ctx fn in
     let* fnty = norm_ty ctx.len ctx.sctx fnty in
@@ -109,6 +126,17 @@ and check_ty (ctx : ctx) (ty : tm) : r M.t =
     check_ty ctx' cod
   | Bool -> success
   | U -> success
+  | Ifte { discr ; brT ; brF } ->
+    let$ () = check ctx discr Bool in
+    (* let$ () = check_ty ctx brT in
+    let$ () = check_ty ctx brF in
+    success *)
+    let* b = norm ctx.ctx Bool discr in
+    begin match (b :> tm) with 
+    | True -> check_ty ctx brT
+    | False -> check_ty ctx brF
+    | _ -> failwith "Not a valid boolean value"
+    end
   | t -> check ctx t U
 
 
@@ -135,3 +163,16 @@ let full_check_tm (ctx : tm list) (t : tm) (ty : tm) : bool =
     check ctx t ty
   in 
   mb = success
+
+let full_check_tm_dbg (ctx : tm list) (t : tm) (ty : tm) =
+  let ctx' = check_ctx ctx in
+  let ty' = let$ ctx = ctx' in check_ty ctx ty in
+  let t' = let$ ctx = ctx' in check ctx t ty in 
+  (ctx', ty', t', t' = success)
+
+let full_infer (ctx : tm list) (t : tm) : (tm M.t) option =
+  let mty =
+    let$ ctx = check_ctx ctx in
+    infer ctx t
+  in distr mty
+
