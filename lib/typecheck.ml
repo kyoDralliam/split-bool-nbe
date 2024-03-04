@@ -109,9 +109,12 @@ let rec infer (ctx : ctx) (t : tm) : (tm option) M.t =
   | False -> ret Bool
   | Ifte { discr ; brT ; brF } ->
     let$ () = check ctx discr Bool in
-    let$ tyT = infer ctx brT in
-    let$ tyF = infer ctx brF in
-    ret @@ Ifte {discr; brT = tyT ; brF = tyF}
+    let* b = norm ctx.ctx Bool discr in
+    begin match (b :> tm) with 
+    | True -> infer ctx brT
+    | False -> infer ctx brF
+    | _ -> failwith "Not a valid boolean value"
+    end
   | U -> M.ret None
 
 and check (ctx : ctx) (t : tm) (ty : tm) : r M.t =

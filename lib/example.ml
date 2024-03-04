@@ -130,3 +130,18 @@ let appFunFunny = {
   ty = ifte (Var 1) Bool btob ;
   tm = Var 0 @* (lam Bool (Var 0))
 }
+
+let untyped_subtm = {
+  ctx = [ "b", Bool ] ;
+  ty = Bool ;
+  tm = ifte (Var 0) True (ifte (Var 0) (U @* U) False)
+}
+
+let delta = lam Bool (Var 0 @* Var 0)
+let omega = delta @* delta
+
+let may_diverge = {
+  ctx = [ "b", Bool ] ;
+  ty = Bool ;
+  tm = ifte (Var 0) True (ifte (Var 0) omega False)
+}
