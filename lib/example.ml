@@ -1,11 +1,10 @@
-
 open Term
 open Nbe
 
-let ( @* ) fn arg = App {fn ; arg}
-let pi dom cod = Pi {dom ; cod}
-let lam ty body = Lam { ty ; body}
-let ifte discr brT brF = Ifte { discr ; brT ; brF }
+
+(* An instance of a typechecking problem consists of a named context (last entry at the top), a type and a term *)
+
+type inst = { ctx : (string * tm) list ; ty : tm ; tm : tm }
 
 let print_res names (ct : (int*NeNf.ne,NeNf.pnf) Splitter.case_tree) = 
   let names = List.map (fun x -> Some x) names in
@@ -13,22 +12,33 @@ let print_res names (ct : (int*NeNf.ne,NeNf.pnf) Splitter.case_tree) =
   let pp_lvl_ne fmt ((i,ne) : int * NeNf.ne) = Format.fprintf fmt "%d:%a" i (pp_tm ~names) (ne :> tm) in
   Format.printf "%a" (Splitter.pp_case_tree pp_lvl_ne pp_pnf) ct
 
-type inst = { ctx : (string * tm) list ; ty : tm ; tm : tm }
-
 let norm_inst (inst : inst) = 
   M.run @@ norm (List.map snd inst.ctx) inst.ty inst.tm
 
+(* Print the result of normalizing *)
 let print_inst (inst : inst) = 
   print_res (List.map fst inst.ctx) (norm_inst inst)
 
+(* Typechecks an instance *)
 let check_inst (inst : inst) =
   Typecheck.full_check_tm (List.map snd inst.ctx) inst.tm inst.ty
 
+(* Typechecks an instance and return the intermediate components for the context, type and term *)
 let check_inst_dbg (inst : inst) =
   Typecheck.full_check_tm_dbg (List.map snd inst.ctx) inst.tm inst.ty
 
+(* Infers the type of the term of the instance disregarding the provided type *)
 let infer_inst (inst : inst) =
   Typecheck.full_infer (List.map snd inst.ctx) inst.tm
+
+
+
+(* Writing terms *)
+let ( @* ) fn arg = App {fn ; arg}
+let pi dom cod = Pi {dom ; cod}
+let lam ty body = Lam { ty ; body}
+let ifte discr brT brF = Ifte { discr ; brT ; brF }
+
 
 
 let ex1 = {
@@ -105,14 +115,22 @@ let boolExt3 = {
   tm = Var 0
 }
 
+let untyped_subtm = {
+  ctx = [ "b", Bool ] ;
+  ty = Bool ;
+  tm = ifte (Var 0) True (ifte (Var 0) (U @* U) False)
+}
 
-let examples = [ ex1 ; ex2 ; ex3 ; ex4 ; ex5 ; id_bool_inst ; boolExt1 ; boolExt2 ; boolExt3 ]
+let delta = lam Bool (Var 0 @* Var 0)
+let omega = delta @* delta
 
-let check_all_examples () = List.for_all check_inst examples
-
+let may_diverge = {
+  ctx = [ "b", Bool ] ;
+  ty = Bool ;
+  tm = ifte (Var 0) True (ifte (Var 0) omega False)
+}
 
 let btob = pi Bool Bool
-
 let funFunny = {
   ctx = [
     "f", ifte (Var 0) (pi btob Bool) (pi btob btob) ;
@@ -131,17 +149,10 @@ let appFunFunny = {
   tm = Var 0 @* (lam Bool (Var 0))
 }
 
-let untyped_subtm = {
-  ctx = [ "b", Bool ] ;
-  ty = Bool ;
-  tm = ifte (Var 0) True (ifte (Var 0) (U @* U) False)
-}
+let examples = [ ex1 ; ex2 ; ex3 ; ex4 ; ex5 ; id_bool_inst ; boolExt1 ; boolExt2 ; boolExt3 ; untyped_subtm ; may_diverge ; funFunny ; appFunFunny ]
 
-let delta = lam Bool (Var 0 @* Var 0)
-let omega = delta @* delta
+let check_all_examples () = List.for_all check_inst examples
 
-let may_diverge = {
-  ctx = [ "b", Bool ] ;
-  ty = Bool ;
-  tm = ifte (Var 0) True (ifte (Var 0) omega False)
-}
+
+
+

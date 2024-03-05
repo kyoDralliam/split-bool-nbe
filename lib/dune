@@ -1,3 +1,4 @@
 (library
  (name bool)
+ (wrapped false)
  (preprocess (pps ppx_deriving.show ppx_deriving.ord)))
