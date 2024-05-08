@@ -31,7 +31,10 @@ let rec do_app i (fn : t) (arg : t) =
     let arg = Normal { ty = dom ; tm = arg } in
     let ne = NeApp { fn = ne ; arg } in
     M.ret @@ NfNe { ty ; ne }
-  | _ -> failwith "Not a function"
+  | nf ->
+    Format.fprintf Format.err_formatter "Not a function: %a" pp nf ;
+    M.fail
+    (* failwith "Not a function" *)
 
 and do_clos i (Clos { env ; body }) arg = 
   eval i body (arg :: env)

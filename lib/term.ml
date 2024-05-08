@@ -16,11 +16,11 @@ type tm =
     | Some (Some s) -> Format.fprintf fmt "%s" s
     end
   | Pi {dom ; cod} -> 
-      Format.fprintf fmt "Π %a. %a"
+      Format.fprintf fmt "Π(%a). %a"
         (pp_tm ~names) dom
         (pp_tm ~names:(None :: names)) cod
   | Lam { ty ; body } -> 
-      Format.fprintf fmt "λ :%a. %a"
+      Format.fprintf fmt "λ( :%a). %a"
         (pp_tm ~names) ty
         (pp_tm ~names:(None :: names)) body
   | App {fn ; arg} -> 

@@ -1,9 +1,9 @@
 
 module CT = struct
 
-type ('a, 'b) case_tree =
-  | Split of { lbl : 'a ; onl : ('a,'b) case_tree ; onr : ('a,'b) case_tree }
-  | Leaf of 'b
+  type ('a, 'b) case_tree =
+    | Split of { lbl : 'a ; onl : ('a,'b) case_tree ; onr : ('a,'b) case_tree }
+    | Leaf of 'b
 
   let ret x = Leaf x
   let rec map flbl fleaf t = 
@@ -41,14 +41,14 @@ let pp_case_tree pp_lbl pp_leaf fmt ct =
   let pp_path fmt (l, x) = 
     let pp_sep fmt () = Format.fprintf fmt ", " in
     let pp_lift_lbl fmt = function
-      | Left x -> pp_lbl fmt x
+      | Left x -> Format.fprintf fmt "  %a " pp_lbl x
       | Right x -> Format.fprintf fmt "~[%a]" pp_lbl x
     in 
     Format.fprintf fmt "%a -> %a"
       (Format.pp_print_list ~pp_sep pp_lift_lbl) l
       pp_leaf x
   in 
-  Format.pp_print_list ~pp_sep pp_path fmt (paths ct)
+  Format.fprintf fmt "| %a" (Format.pp_print_list ~pp_sep pp_path) (paths ct)
 
 
 
