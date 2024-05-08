@@ -131,6 +131,17 @@ let may_diverge = {
 }
 
 let btob = pi Bool Bool
+
+let funFunnyTy = {
+  ctx = [
+    "f", ifte (Var 0) (pi btob Bool) (pi btob btob) ;
+    "b", Bool
+  ] ;
+  ty = U ;
+  tm = ifte (Var 1) (pi btob Bool) (pi btob btob) ;
+}
+
+
 let funFunny = {
   ctx = [
     "f", ifte (Var 0) (pi btob Bool) (pi btob btob) ;
@@ -149,10 +160,17 @@ let appFunFunny = {
   tm = Var 0 @* (lam Bool (Var 0))
 }
 
-let examples = [ ex1 ; ex2 ; ex3 ; ex4 ; ex5 ; id_bool_inst ; boolExt1 ; boolExt2 ; boolExt3 ; untyped_subtm ; may_diverge ; funFunny ; appFunFunny ]
+let examples = 
+  [ ex1 ; ex2 ; ex3 ; ex4 ; ex5 ; 
+    id_bool_inst ;
+    boolExt1 ; boolExt2 ; boolExt3 ;  
+    funFunnyTy ; funFunny ; appFunFunny ; 
+    may_diverge ; untyped_subtm ]
 
 let check_all_examples () = List.for_all check_inst examples
 
+let print_all_examples () = 
+  List.iter (fun i -> print_inst i ; Format.print_newline () ; Format.print_newline ()) examples
 
 
 

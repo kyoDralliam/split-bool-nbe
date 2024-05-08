@@ -1,7 +1,31 @@
+
+module CT = struct
+
 type ('a, 'b) case_tree =
   | Split of { lbl : 'a ; onl : ('a,'b) case_tree ; onr : ('a,'b) case_tree }
   | Leaf of 'b
 
+  let ret x = Leaf x
+  let rec map flbl fleaf t = 
+    match t with
+    | Split r -> 
+      Split { 
+        lbl = flbl r.lbl ; 
+        onl = map flbl fleaf r.onl  ;
+        onr = map flbl fleaf r.onr }
+    | Leaf x -> Leaf (fleaf x)
+
+  let rec bind m f = 
+    match m with
+    | Leaf x -> f x
+    | Split {lbl ; onl; onr} -> Split {lbl ; onl = bind onl f ; onr = bind onr f}
+
+  let (let*) = bind
+
+  let prod m1 m2 = let* x1 = m1 in let* x2 = m2 in ret (x1,x2)
+end
+
+open CT
 open Either
 
 let rec paths ct =
@@ -50,37 +74,38 @@ type comparison = Lt | Eq | Gt
 
 let sign (n : int) = if n < 0 then Lt else if n = 0 then Eq else Gt
 
-module TreeSplitter(O : Map.OrderedType) : Splitter with type o = O.t =
+let option_prod o1 o2 = 
+  Option.bind o1 (fun x1 -> Option.bind o2 (fun x2 -> Some (x1,x2)))
+
+module TreeSplitter(O : Map.OrderedType) (*: Splitter with type o = O.t *) =
 struct
   type o = O.t
 
-  type 'a t = (O.t,'a) case_tree
+  type 'a t = (O.t,'a option) case_tree
 
-  let ret x = Leaf x
+  let ret x = Leaf (Some x)
+  let fail = Leaf None
 
   let split lbl onl onr =
     if onl = onr then onl else Split { lbl ; onl ; onr}
 
-  let rec map f m =
-    match m with
-    | Leaf x -> Leaf (f x)
-    | Split s -> split s.lbl (map f s.onl) (map f s.onr)
+  let map f m = CT.map Fun.id (Option.map f) m
 
   let (let+) m f = map f m
 
   let rec sink (n : O.t) (b : bool) (m : 'a t) : ('a t) t =
     match m with
-    | Leaf x -> Leaf (Leaf x)
+    | Leaf x -> ret (Leaf x)
     | Split s ->
       match sign @@ O.compare n s.lbl with
-      | Eq -> Leaf (if b then s.onl else s.onr)
-      | Lt -> Leaf m
+      | Eq -> ret (if b then s.onl else s.onr)
+      | Lt -> ret m
       | Gt -> split s.lbl (sink n b s.onl) (sink n b s.onr)
 
   let rec merge (ml : 'a t) (mr : 'b t) : ('a * 'b) t =
     match ml, mr with
-    | Leaf x, m -> map (fun y -> (x, y)) m
-    | m, Leaf y -> map (fun x -> (x, y)) m
+    | Leaf x, m -> CT.map Fun.id (option_prod x) m
+    | m, Leaf y -> CT.map Fun.id (fun x -> option_prod x y) m
     | Split sl, Split sr ->
       match sign @@ O.compare sl.lbl sr.lbl with
       | Eq -> split sl.lbl (merge sl.onl sr.onl) (merge sl.onr sr.onr)
@@ -89,7 +114,8 @@ struct
 
   let rec bind_aux m f =
     match m with
-    | Leaf x -> f x
+    | Leaf None -> Leaf None
+    | Leaf (Some x) -> f x
     | Split r -> Split {
         r with
         onl = bind_aux r.onl f ;
@@ -128,7 +154,8 @@ struct
         let+ (onl, onr) = merge onl onr in
         split lbl onl onr
       else split lbl onl onr
-    | Leaf x -> Leaf (Leaf x)
+    | Leaf (Some x) -> ret (Leaf x)
+    | Leaf None -> fail
 
   (* let rec exists p m =
     match m with
@@ -136,5 +163,5 @@ struct
       p lbl || exists p onl || exists p onr
     | Leaf _ -> false *)
 
-  let run m = m
+  let run m = CT.map Fun.id (function | None -> failwith "Run None!" | Some x -> x) m
 end

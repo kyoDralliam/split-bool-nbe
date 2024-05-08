@@ -66,8 +66,8 @@ let conv_ty  (ctx : ctx) (a : tm) (b : tm) : r M.t =
   let* nb = read_back_pnf i NfU b in
   M.ret @@ (na = nb) *)
 
-let rec reify_case_tree (m : (LevelNeOrd.t, tm) Splitter.case_tree) : tm =
-  let open Splitter in
+let rec reify_case_tree (m : (LevelNeOrd.t, tm) Splitter.CT.case_tree) : tm =
+  let open Splitter.CT in
   match m with
   | Leaf t -> t
   | Split { lbl ; onl ; onr } ->

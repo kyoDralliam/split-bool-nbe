@@ -19,8 +19,8 @@ open Domain
 
 
 let rec from_case_tree = function
-  | Leaf t -> NeNf.pnf_nf t
-  | Split {lbl ; onl ; onr } ->
+  | CT.Leaf t -> NeNf.pnf_nf t
+  | CT.Split {lbl ; onl ; onr } ->
     NeNf.case (snd lbl) (from_case_tree onl) (from_case_tree onr)
 
 let rec do_app i (fn : t) (arg : t) =
@@ -72,7 +72,8 @@ and eval i t env =
       let* onT = eval i brT env in
       let* onF = eval i brF env in
       do_split i ne onT onF
-    | _ -> failwith "Discriminee does not evaluate to a boolean"
+    | _ -> M.fail
+       (* failwith "Discriminee does not evaluate to a boolean" *)
     end
   | U -> 
     M.ret @@ NfU
@@ -96,7 +97,9 @@ and read_back_ty i ty : NeNf.pnf M.t =
     M.ret @@ NeNf.univ
   | NfNe { ty = _ ; ne } -> 
     M.map (fun x -> NeNf.ne_pnf NeNf.univ x) (read_back_ne i ne)
-  | _ -> failwith "Not a valid code of universe"
+  | _ -> 
+    M.fail
+    (* failwith "Not a valid code of universe" *)
 
 
 and read_back_pnf i ty t : NeNf.pnf M.t =
@@ -126,8 +129,12 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
       M.ret @@ NeNf.bool
     | NfNe { ty = _ ; ne } -> 
       M.map (fun x -> NeNf.ne_pnf NeNf.univ x) (read_back_ne i ne)
-    | NfU ->  failwith "Type in Type"
-    | _ -> failwith "Not a valid code of universe"
+    | NfU ->  
+      M.fail
+      (* failwith "Type in Type" *)
+    | _ -> 
+      M.fail
+      (* failwith "Not a valid code of universe" *)
     end
   | NfBool -> 
     begin match t with
@@ -137,7 +144,9 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
       M.ret @@ NeNf.bfalse
     | NfNe { ty = _ ; ne } -> 
       do_split i ne NeNf.btrue NeNf.bfalse
-    | _ -> failwith "Not a valid bool"
+    | _ -> 
+      M.fail
+      (* failwith "Not a valid bool" *)
     end
   | NfNe { ne = ty ; _ } ->
     begin match t with
@@ -147,9 +156,13 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
       in
       let* t = read_back_ne i ne in
       M.ret @@ NeNf.ne_pnf ty t
-    | _ -> failwith "Not a valid element of a neutral type"
+    | _ -> 
+      M.fail
+      (* failwith "Not a valid element of a neutral type" *)
     end
-  | _ -> failwith "Not a valid type"
+  | _ -> 
+    M.fail
+    (* failwith "Not a valid type" *)
 
 and read_back_ne i ne : NeNf.ne M.t =
   match ne with
