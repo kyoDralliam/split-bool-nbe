@@ -48,17 +48,16 @@ let rec contains_var i t =
     contains_var i discr || contains_var i brT || contains_var i brF
   | Bool | True | False | U -> false
 
-module S = Set.Make(Int)
 
-let rec supp k t : S.t =
+let rec minsupp k t : int =
   match t with
-  | Var i -> if i >= k then S.singleton i else S.empty
-  | Pi { dom ; cod } -> S.union (supp k dom) (supp (k+1) cod)
-  | Lam { ty ; body } -> S.union (supp k ty) (supp (k+1) body)
-  | App { fn ; arg } -> S.union (supp k fn) (supp k arg)
+  | Var i -> if i >= k then (i - k) else max_int
+  | Pi { dom ; cod } -> Int.min (minsupp k dom) (minsupp (k+1) cod)
+  | Lam { ty ; body } -> Int.min (minsupp k ty) (minsupp (k+1) body)
+  | App { fn ; arg } -> Int.min (minsupp k fn) (minsupp k arg)
   | Ifte { discr ; brT ; brF } -> 
-    S.union (supp k discr) (S.union (supp k brT) (supp k brF))
-  | _ -> S.empty
+    Int.min (minsupp k discr) (Int.min (minsupp k brT) (minsupp k brF))
+  | _ -> max_int
 
 let rec strenghen k l t = 
   match t with
@@ -75,15 +74,11 @@ let rec strenghen k l t =
   | _ -> t
 
 let to_canonical_index t =
-  let s = supp 0 t in
-  match S.min_elt_opt s with
-  | None -> 
-    (-1, t) (* That case should never happen for a neutral term t *)
-  | Some l -> 
-    let t' = strenghen 0 l t in
-    (* Format.printf "Before str: %a@\nAfter str: %a@\n@\n"
+  let l = minsupp 0 t in
+  let t' = strenghen 0 l t in
+  (* Format.printf "Before str: %a@\nAfter str: %a@\n@\n"
       (pp_tm ~names:[]) t (pp_tm ~names:[]) t' ; *)
-    (l, t')
+  (l, t')
 
 module NeNf : sig
   type ne = private tm
