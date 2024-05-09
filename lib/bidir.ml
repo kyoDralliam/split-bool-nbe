@@ -7,9 +7,10 @@ type itm =
 and ctm =
  | Pi of { dom : ctm ; cod : ctm }
  | Bool
+ | U 
+ | IfTy of { discr : ctm ; tyT : ctm ; tyF : ctm }
  | True
  | False
- | U 
  | Lam of ctm
  | Inj of itm 
  [@@ deriving show]
@@ -25,8 +26,9 @@ let rec itm_tm = function
 and ctm_tm = function
   | Pi { dom ; cod } -> Tm.Pi { dom = ctm_tm dom ; cod = ctm_tm cod }
   | Bool -> Tm.Bool
+  | U -> Tm.U
+  | IfTy {discr; tyT ; tyF} -> Tm.Ifte { discr = ctm_tm discr ; brT = ctm_tm tyT ; brF = ctm_tm tyF }
   | True -> Tm.True
   | False -> Tm.False
-  | U -> Tm.U
   | Lam t -> Tm.Lam (ctm_tm t)
   | Inj t -> itm_tm t

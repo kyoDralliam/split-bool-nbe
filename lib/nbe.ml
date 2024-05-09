@@ -46,6 +46,17 @@ and do_split : type a. int -> ne -> a -> a -> a M.t =
   let (j, stne) = NeNf.to_canonical_index tne in
   M.split (i - j,stne) (M.ret brT) (M.ret brF)
 
+and do_ifte : type a. int -> t -> a M.t -> a M.t -> a M.t =
+  fun i b brT brF ->
+    match b with
+    | NfTrue -> brT
+    | NfFalse -> brF
+    | NfNe { ty = _ ; ne } ->
+      let* onT = brT in
+      let* onF = brF in
+      do_split i ne onT onF
+    | _ -> M.fail
+
 and eval i t env = 
   match t with
   | Tm.Var i -> 
@@ -69,16 +80,8 @@ and eval i t env =
     M.ret @@ NfFalse
   | Tm.Ifte { discr ; brT ; brF } ->
     let* b = eval i discr env in
-    begin match b with
-    | NfTrue -> eval i brT env
-    | NfFalse -> eval i brF env
-    | NfNe { ty = _ ; ne } ->
-      let* onT = eval i brT env in
-      let* onF = eval i brF env in
-      do_split i ne onT onF
-    | _ -> M.fail
-       (* failwith "Discriminee does not evaluate to a boolean" *)
-    end
+    do_ifte i b (eval i brT env) (eval i brF env)
+    (* failwith "Discriminee does not evaluate to a boolean" *)
   | U -> 
     M.ret @@ NfU
 
@@ -140,18 +143,7 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
       M.fail
       (* failwith "Not a valid code of universe" *)
     end
-  | NfBool -> 
-    begin match t with
-    | NfTrue -> 
-      M.ret @@ NeNf.btrue
-    | NfFalse ->
-      M.ret @@ NeNf.bfalse
-    | NfNe { ty = _ ; ne } -> 
-      do_split i ne NeNf.btrue NeNf.bfalse
-    | _ -> 
-      M.fail
-      (* failwith "Not a valid bool" *)
-    end
+  | NfBool -> do_ifte i t (M.ret NeNf.btrue) (M.ret NeNf.bfalse)
   | NfNe { ne = ty ; _ } ->
     begin match t with
     | NfNe { ne ; _ } ->
