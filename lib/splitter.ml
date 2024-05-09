@@ -77,11 +77,19 @@ let sign (n : int) = if n < 0 then Lt else if n = 0 then Eq else Gt
 let option_prod o1 o2 = 
   Option.bind o1 (fun x1 -> Option.bind o2 (fun x2 -> Some (x1,x2)))
 
-module TreeSplitter(O : Map.OrderedType) (*: Splitter with type o = O.t *) =
+module type TreeSplitterParam =
+sig
+  include Map.OrderedType  
+  val pp : Format.formatter -> t -> unit
+end
+
+module TreeSplitter(O : TreeSplitterParam) (*: Splitter with type o = O.t *) =
 struct
   type o = O.t
 
   type 'a t = (O.t,'a option) case_tree
+
+  let pp pp_lbl fmt ct = pp_case_tree O.pp (Format.pp_print_option pp_lbl) fmt ct 
 
   let ret x = Leaf (Some x)
   let fail = Leaf None

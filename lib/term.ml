@@ -7,7 +7,7 @@ type tm =
  | True
  | False
  | Ifte of { discr : tm ; brT : tm ; brF : tm }
- | U [@@ deriving ord]
+ | U [@@ deriving ord, show]
 
  let rec pp_tm ?(names=[]) fmt = function 
   | Var i -> 
@@ -81,9 +81,9 @@ let to_canonical_index t =
   (l, t')
 
 module NeNf : sig
-  type ne = private tm
-  type pnf = private tm
-  type nf = private tm
+  type ne = private tm [@@deriving show]
+  type pnf = private tm [@@deriving show]
+  type nf = private tm [@@deriving show]
 
   val compare_ne : ne -> ne -> int
   val contains_var : int -> ne -> bool
@@ -104,13 +104,13 @@ end =
 struct
 
   (* Neutral terms *)
-  type ne = tm
+  type ne = tm [@@deriving show]
 
   (* Pure normal forms *)
-  type pnf = tm
+  type pnf = tm [@@deriving show]
 
   (* Normal forms *)
-  type nf = tm
+  type nf = tm [@@deriving show]
 
   let compare_ne = compare_tm
   let contains_var = contains_var

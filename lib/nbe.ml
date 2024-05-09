@@ -3,9 +3,10 @@ open Splitter
 module Tm = Term
 module NeNf = Tm.NeNf
 
-module LevelNeOrd : Map.OrderedType with type t = (int * NeNf.ne) =
+module LevelNeOrd  =
 struct
   type t = int * NeNf.ne
+  [@@deriving show]
   let compare (k1,ne1) (k2,ne2) =
     let ck = Int.compare k1 k2 in
     if ck = 0 then Tm.NeOrd.compare ne1 ne2 else ck
