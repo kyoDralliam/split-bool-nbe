@@ -1,13 +1,14 @@
 type tm =
  | Var of int (* deBruijn indices *)
  | Pi of { dom : tm ; cod : tm }
- | Lam of { ty : tm ; body : tm }
+ | Lam of tm
  | App of { fn : tm ; arg : tm }
  | Bool
  | True
  | False
  | Ifte of { discr : tm ; brT : tm ; brF : tm }
- | U [@@ deriving ord, show]
+ | U 
+ [@@ deriving ord, show]
 
  let rec pp_tm ?(names=[]) fmt = function 
   | Var i -> 
@@ -19,9 +20,8 @@ type tm =
       Format.fprintf fmt "Π(%a). %a"
         (pp_tm ~names) dom
         (pp_tm ~names:(None :: names)) cod
-  | Lam { ty ; body } -> 
-      Format.fprintf fmt "λ( :%a). %a"
-        (pp_tm ~names) ty
+  | Lam body -> 
+      Format.fprintf fmt "λ. %a"
         (pp_tm ~names:(None :: names)) body
   | App {fn ; arg} -> 
     Format.fprintf fmt "(%a) %a"
@@ -42,7 +42,7 @@ let rec contains_var i t =
   match t with
   | Var k -> i = k
   | Pi { dom ; cod } -> contains_var i dom || contains_var (i+1) cod
-  | Lam { ty ; body } -> contains_var i ty || contains_var (i+1) body
+  | Lam body -> contains_var (i+1) body
   | App { fn ; arg } -> contains_var i fn || contains_var i arg
   | Ifte { discr ; brT ; brF } ->
     contains_var i discr || contains_var i brT || contains_var i brF
@@ -53,11 +53,11 @@ let rec minsupp k t : int =
   match t with
   | Var i -> if i >= k then (i - k) else max_int
   | Pi { dom ; cod } -> Int.min (minsupp k dom) (minsupp (k+1) cod)
-  | Lam { ty ; body } -> Int.min (minsupp k ty) (minsupp (k+1) body)
+  | Lam body -> minsupp (k+1) body
   | App { fn ; arg } -> Int.min (minsupp k fn) (minsupp k arg)
   | Ifte { discr ; brT ; brF } -> 
     Int.min (minsupp k discr) (Int.min (minsupp k brT) (minsupp k brF))
-  | _ -> max_int
+  | Bool | U | True | False -> max_int
 
 let rec strenghen k l t = 
   match t with
@@ -65,13 +65,13 @@ let rec strenghen k l t =
     if i >= k then Var (i - l) else Var i
   | Pi { dom ; cod } -> 
     Pi { dom = strenghen k l dom ; cod = strenghen (k+1) l cod }
-  | Lam { ty ; body } ->
-    Lam { ty = strenghen k l ty ; body = strenghen (k+1) l body }
+  | Lam body ->
+    Lam (strenghen (k+1) l body)
   | App { fn ; arg } ->
     App { fn = strenghen k l fn ; arg = strenghen k l arg }
   | Ifte { discr ; brT ; brF } -> 
     Ifte { discr = strenghen k l discr ; brT = strenghen k l brT ; brF = strenghen k l brF }
-  | _ -> t
+  | (Bool | U | True | False) as t -> t
 
 let to_canonical_index t =
   let l = minsupp 0 t in
@@ -93,7 +93,7 @@ module NeNf : sig
   val app : ne -> pnf -> ne
   val ne_pnf : pnf -> ne -> pnf
   val pi : pnf -> nf -> pnf
-  val lam : pnf -> nf -> pnf
+  val lam : nf -> pnf
   val bool : pnf
   val btrue : pnf
   val bfalse : pnf
@@ -153,9 +153,9 @@ struct
     assert (valid_nf cod) ;
     Pi { dom ; cod }
 
-  let lam ty body =
+  let lam body =
     (* assert (valid_nf body) ; *)
-    Lam { ty ; body }
+    Lam body
   let bool = Bool
   let btrue = True
   let bfalse = False
@@ -176,3 +176,28 @@ struct
   let compare = NeNf.compare_ne 
 end
 
+
+let rec wk k t n = 
+  match t with
+  | Var i -> if i < k then Var i else Var (i+n)
+  | Pi {dom; cod} -> Pi { dom = wk k dom n ; cod = wk (k+1) cod n }
+  | Lam body -> Lam (wk (k+1) body n)
+  | App {fn ; arg} -> App {fn = wk k fn n ; arg = wk k arg n}
+  | Ifte { discr ; brT ; brF } -> 
+    Ifte { discr = wk k discr n ; brT = wk k brT n ; brF = wk k brF n }
+  | cst -> cst
+
+let wkn n t = wk 0 t n
+let wk1 = wkn 1
+
+let rec subst k t u = 
+  match t with
+  | Var i -> if i = k then u else Var i
+  | Pi {dom; cod} -> Pi { dom = subst k dom u ; cod = subst (k+1) cod (wk1 u) }
+  | Lam body -> Lam (subst (k+1) body (wk1 u))
+  | App {fn ; arg} -> App {fn = subst k fn u ; arg = subst k arg u}
+  | Ifte { discr ; brT ; brF } -> 
+    Ifte { discr = subst k discr u ; brT = subst k brT u ; brF = subst k brF u }
+  | cst -> cst
+
+let subst0 t u = subst 0 t u

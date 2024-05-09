@@ -1,10 +1,10 @@
-open Term
+open InferTerm
 open Nbe
 
 
 (* An instance of a typechecking problem consists of a named context (last entry at the top), a type and a term *)
 
-type inst = { ctx : (string * tm) list ; ty : tm ; tm : tm }
+type inst = { ctx : (string * itm) list ; ty : itm ; tm : itm }
 
 let pp_ctx = 
   let pp_sep fmt () = Format.fprintf fmt "," in
@@ -20,10 +20,10 @@ let last i l =
 
 let print_res fmt ctx (ct : (int*NeNf.ne,NeNf.pnf) Splitter.CT.case_tree) = 
   let names = List.map (fun x -> Some (fst x)) ctx in
-  let pp_pnf fmt (t : NeNf.pnf) = pp_tm ~names fmt (t :> tm) in
+  let pp_pnf fmt (t : NeNf.pnf) = Term.pp_tm ~names fmt (t :> Term.tm) in
   let pp_lvl_ne fmt ((i,ne) : int * NeNf.ne) = 
     let names = last (i+1) names  in
-    Format.fprintf fmt "%d:%a" i (pp_tm ~names) (ne :> tm) in
+    Format.fprintf fmt "%d:%a" i (Term.pp_tm ~names) (ne :> Term.tm) in
   let ctx' =
     let map_smff = List.map (fun x -> Some (fst (fst x))) in
     List.fold_right (fun x l -> (x, map_smff l) :: l) ctx []
@@ -33,7 +33,7 @@ let print_res fmt ctx (ct : (int*NeNf.ne,NeNf.pnf) Splitter.CT.case_tree) =
     (Splitter.pp_case_tree pp_lvl_ne pp_pnf) ct
 
 let norm_inst (inst : inst) = 
-  M.run @@ norm (List.map snd inst.ctx) inst.ty inst.tm
+  M.run @@ norm (List.map (fun x -> itm_tm @@ snd x) inst.ctx) (itm_tm inst.ty) (itm_tm inst.tm)
 
 let pp_inst fmt (inst : inst) = 
   print_res fmt inst.ctx (norm_inst inst)
@@ -122,7 +122,6 @@ let boolExt2 = {
   tm = Var 0 ;
 }
 
-open Typecheck
 (* composition of (deeply-embedded) functions *)
 let comp dom t1 t2 = lam dom (wk1 t1 @* (wk1 t2 @* Var 0)) 
 

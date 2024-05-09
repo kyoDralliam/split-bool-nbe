@@ -55,7 +55,7 @@ and eval i t env =
     let* dom = eval i dom env in
     let cod = Clos { env ; body = cod } in
     M.ret @@ NfPi { dom; cod }
-  | Tm.Lam { ty = _ ; body } -> 
+  | Tm.Lam body -> 
     M.ret @@ NfLam (Clos { env ; body })
   | Tm.App {fn ; arg} ->
     let* f = eval i fn env in
@@ -110,7 +110,7 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
   match ty with
   | NfPi { dom ; cod } ->
       let var0 = NfNe { ty = dom ; ne = NeVar i } in
-      let* dom  = read_back_ty i dom in
+      (* let* dom  = read_back_ty i dom in *)
       let* body = 
         let body =
           let* ty = do_clos (i+1) cod var0 in 
@@ -119,7 +119,7 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
         in 
         read_back_case_tree i body
       in 
-      M.ret @@ NeNf.lam dom body
+      M.ret @@ NeNf.lam body
   | NfU -> 
     begin match t with
     | NfPi { dom ; cod } ->
