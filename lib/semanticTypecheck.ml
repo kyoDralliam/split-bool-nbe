@@ -92,3 +92,20 @@ and infer (ctx : sctx) (t : itm) : D.t M.t =
     let* () = check ctx tm vty in
     M.ret vty
     
+let check_eval_ty ctx ty : D.t M.t = 
+  let* () = check_ty ctx ty in
+  eval (List.length ctx) (ctm_tm ty) (to_env ctx)
+
+let check_ctx (ictx : ctm list) : sctx M.t =
+  let check_eval_ty ty mctx = 
+    let* ctx = mctx in
+    let* vty = check_eval_ty ctx ty in
+    M.ret @@ push ctx vty
+  in
+  List.fold_right check_eval_ty ictx (M.ret [])
+
+let check_full (ictx : ctm list) (itm : ctm) (ity : ctm) : bool =
+  success = 
+    let* ctx = check_ctx ictx in
+    let* ty = check_eval_ty ctx ity in
+    check ctx itm ty

@@ -32,3 +32,25 @@ and ctm_tm = function
   | False -> Tm.False
   | Lam t -> Tm.Lam (ctm_tm t)
   | Inj t -> itm_tm t
+
+
+let rec iwk k t n = 
+  match t with
+  | Var i -> if i < k then Var i else Var (i+n)
+  | App {fn ; arg} -> App {fn = iwk k fn n ; arg = cwk k arg n}
+  | Ifte { discr ; brT ; brF } -> 
+    Ifte { discr = cwk k discr n ; brT = iwk k brT n ; brF = iwk k brF n }
+  | Ascr { tm; ty} -> Ascr { tm = cwk k tm n ; ty = cwk k ty n }
+and cwk k t n = 
+  match t with
+  | Pi {dom; cod} -> Pi { dom = cwk k dom n ; cod = cwk (k+1) cod n }
+  | Lam body -> Lam (cwk (k+1) body n)
+  | IfTy { discr ; tyT ; tyF } -> 
+    IfTy { discr = cwk k discr n ; tyT = cwk k tyT n ; tyF = cwk k tyF n }
+  | Inj t -> Inj (iwk k t n)
+  | (Bool | U | True | False) as cst -> cst
+
+let cwkn n t = cwk 0 t n
+let iwkn n t = iwk 0 t n
+let iwk1 = iwkn 1
+let cwk1 = cwkn 1
