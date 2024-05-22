@@ -18,7 +18,7 @@ let last i l =
     if i = 0 then acc else aux (i -1) (List.hd l :: acc) (List.tl l)
   in aux i [] (List.rev l)
 
-let print_res fmt ctx (ct : (int*NeNf.ne,NeNf.pnf) Splitter.CT.case_tree) = 
+let print_res fmt ctx (ct : (int*NeNf.ne,NeNf.pnf) CaseTree.case_tree) = 
   let names = List.map (fun x -> Some (fst x)) ctx in
   let pp_pnf fmt (t : NeNf.pnf) = Term.pp_tm ~names fmt (t :> Term.tm) in
   let pp_lvl_ne fmt ((i,ne) : int * NeNf.ne) = 
@@ -30,10 +30,11 @@ let print_res fmt ctx (ct : (int*NeNf.ne,NeNf.pnf) Splitter.CT.case_tree) =
   in
   Format.fprintf fmt "%a |-@\n%a"
     pp_ctx (List.rev ctx')
-    (Splitter.pp_case_tree pp_lvl_ne pp_pnf) ct
+    (CaseTree.pp_case_tree pp_lvl_ne pp_pnf) ct
 
 let norm_inst (inst : inst) = 
-  M.run @@ norm (List.map (fun x -> itm_tm @@ snd x) inst.ctx) (itm_tm inst.ty) (itm_tm inst.tm)
+  M.run M.Map.empty (fun _ -> failwith "Run None!") @@ 
+    norm (List.map (fun x -> itm_tm @@ snd x) inst.ctx) (itm_tm inst.ty) (itm_tm inst.tm)
 
 let pp_inst fmt (inst : inst) = 
   print_res fmt inst.ctx (norm_inst inst)

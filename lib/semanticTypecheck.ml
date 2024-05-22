@@ -11,7 +11,6 @@ let nf_ty = function | D.Normal x -> x.ty
 let to_env (ctx : sctx) : D.env  = List.map nf_tm ctx
 
 let success = M.ret ()
-let from_opt = function Some x -> M.ret x | None -> M.fail
 
 let empty_ctx = []
 let push ctx sty = 
@@ -23,7 +22,7 @@ let conv_ty  (ctx : sctx) (a : D.t) (b : D.t) =
   let i = List.length ctx in
   let* na = read_back_ty i a in
   let* nb = read_back_ty i b in  
-  if na = nb then success else M.fail
+  if na = nb then success else M.fail "Not convertible"
 
 
 
@@ -44,9 +43,9 @@ let rec check_ty (ctx : sctx) (t : ctm) : unit M.t =
     let* tT = infer ctx t in
     begin match tT with
     | D.NfU -> success
-    | _ ->  M.fail
+    | _ ->  M.fail "Not of type U"
     end
-  | True | False | Lam _ -> M.fail
+  | True | False | Lam _ -> M.fail "Not a type"
 
 and check (ctx : sctx) (t : ctm) (ty : D.t): unit M.t =
   match t, ty with
@@ -64,13 +63,13 @@ and check (ctx : sctx) (t : ctm) (ty : D.t): unit M.t =
   | Inj t, tT' -> 
     let* tT = infer ctx t in
     conv_ty ctx tT tT'
-  | _, _ -> M.fail
+  | _, _ -> M.fail (Format.sprintf "Incompatible term %a and type %a" (Fun.const show_ctm) t (Fun.const D.show) ty)
 
 and infer (ctx : sctx) (t : itm) : D.t M.t =
   match t with
   | Var i ->
     begin match List.nth_opt ctx i with
-    | None -> M.fail
+    | None -> M.fail "Unbound variable"
     | Some (Normal x) -> M.ret x.ty
     end
   | App { fn ; arg } ->
@@ -80,7 +79,7 @@ and infer (ctx : sctx) (t : itm) : D.t M.t =
       let* () = check ctx arg dom in
       let* varg = eval (List.length ctx) (ctm_tm arg) (to_env ctx) in
       do_clos (List.length ctx) cod varg
-    | _ -> M.fail
+    | _ -> M.fail "Not a Pi"
     end
   | Ifte { discr ; brT ; brF } -> 
     let* () = check ctx discr NfBool in
@@ -109,3 +108,9 @@ let check_full (ictx : ctm list) (itm : ctm) (ity : ctm) : bool =
     let* ctx = check_ctx ictx in
     let* ty = check_eval_ty ctx ity in
     check ctx itm ty
+
+let check_full_debug (ictx : ctm list) (itm : ctm) (ity : ctm) =
+  let ctx' = check_ctx ictx in
+  let ty' = let* ctx = ctx' in check_eval_ty ctx ity in
+  let t' = let* ctx = ctx' in let* ty = ty' in check ctx itm ty in 
+  (ctx', ty', t', t' = success)

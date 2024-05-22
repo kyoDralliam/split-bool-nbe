@@ -1,18 +1,18 @@
 open Term
 open Nbe
 
-open Splitter.Notations(M)
+open Monad.Notations(M)
 module D = Domain
 
 module IT = InferTerm
 
 type r = unit
 let success : r M.t = M.ret ()
-let fail : r M.t = M.fail
+let fail () :  'a M.t = M.fail ""
 
 let ret x = M.ret x
 
-let from_opt = function Some x -> M.ret x | None -> M.fail
+let from_opt = function Some x -> M.ret x | None -> M.fail ""
 
 (* let ( let$ ) (m : ('a option) M.t) (f : 'a -> ('b option) M.t) : ('b option) M.t = 
   let* opt = m in
@@ -23,7 +23,7 @@ let from_opt = function Some x -> M.ret x | None -> M.fail
 exception LocalEscape
 
 let distr (m : 'a M.t) : ('a M.t) option =
-  try Some Splitter.CT.(let* x = m in match x with None -> raise LocalEscape | Some x -> M.ret x)
+  try Some (CaseTree.fold (M.split) (M.ret) (M.run M.Map.empty (fun _ -> raise LocalEscape) m))
   with LocalEscape -> None 
 
 type ctx = { len : int ; ctx : tm list ; sctx : D.env }
@@ -37,7 +37,7 @@ let push { len ; ctx ; sctx } ty =
 let conv_ty  (ctx : ctx) (a : tm) (b : tm) : r M.t =
   let* na = norm_ty ctx.len ctx.sctx a in
   let* nb = norm_ty ctx.len ctx.sctx b in 
-  if na = nb then success else fail
+  if na = nb then success else fail ()
 
 (* let conv_sty i (a : D.t) (b : D.t) : bool M.t =
   let* na = read_back_pnf i NfU a in
@@ -69,7 +69,7 @@ let rec infer (ctx : ctx) (t : IT.itm) : tm M.t =
     let ty = IT.itm_tm ty in
     let* ctx' = push ctx ty in
     let cod0 = infer ctx' body in
-    let* cod = M.filter (fun lvl -> fst lvl = ctx'.len) cod0 in
+    let* cod = M.filter (fun lvl -> fst lvl = ctx'.len) M.Map.empty cod0 in
     ret @@ Pi { dom = ty ; cod = reify_case_tree cod }
   | App { fn ; arg } ->
     let* fnty = infer ctx fn in
@@ -78,7 +78,7 @@ let rec infer (ctx : ctx) (t : IT.itm) : tm M.t =
     | Pi { dom ; cod } -> 
       let* () = check ctx arg dom in
       ret (subst0 cod (IT.itm_tm arg))
-    | _ -> M.fail
+    | _ -> fail ()
     end
   | Bool -> ret U
   | True -> ret Bool
@@ -91,7 +91,7 @@ let rec infer (ctx : ctx) (t : IT.itm) : tm M.t =
     | False -> infer ctx brF
     | _ -> failwith "Not a valid boolean value"
     end
-  | U -> M.fail
+  | U -> fail ()
 
 and check (ctx : ctx) (t : IT.itm) (ty : tm) : r M.t =
   let* ty' = infer ctx t in

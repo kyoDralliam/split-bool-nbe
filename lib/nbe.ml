@@ -13,7 +13,7 @@ struct
 end
 
 module M = TreeSplitter(LevelNeOrd)
-module MN = Notations(M)
+module MN = Monad.Notations(M)
 open MN
 
 open Domain
@@ -34,17 +34,16 @@ let rec do_app i (fn : t) (arg : t) =
     M.ret @@ NfNe { ty ; ne }
   | nf ->
     Format.fprintf Format.err_formatter "Not a function: %a" pp nf ;
-    M.fail
-    (* failwith "Not a function" *)
+    M.fail  "Not a function"
 
 and do_clos i (Clos { env ; body }) arg = 
   eval i body (arg :: env)
 
-and do_split : type a. int -> ne -> a -> a -> a M.t = 
+and do_split : type a. int -> ne -> a M.t -> a M.t -> a M.t = 
   fun i ne brT brF ->
   let* tne = read_back_ne i ne in
   let (j, stne) = NeNf.to_canonical_index tne in
-  M.split (i - j,stne) (M.ret brT) (M.ret brF)
+  M.split (i - j,stne) brT brF
 
 and do_ifte : type a. int -> t -> a M.t -> a M.t -> a M.t =
   fun i b brT brF ->
@@ -52,10 +51,8 @@ and do_ifte : type a. int -> t -> a M.t -> a M.t -> a M.t =
     | NfTrue -> brT
     | NfFalse -> brF
     | NfNe { ty = _ ; ne } ->
-      let* onT = brT in
-      let* onF = brF in
-      do_split i ne onT onF
-    | _ -> M.fail
+      do_split i ne brT brF
+    | _ -> M.fail "Not a valid boolean value"
 
 and eval i t env = 
   match t with
@@ -88,7 +85,7 @@ and eval i t env =
 (* and read_back_nf i nf = ? *)
 
 and read_back_case_tree i m = 
-  let+ ct = M.filter (fun x -> fst x = i) m in
+  let+ ct = M.filter (fun x -> assert (fst x <= i) ; fst x = i) M.Map.empty m in
   from_case_tree ct
 
 and read_back_ty i ty : NeNf.pnf M.t =
@@ -105,8 +102,7 @@ and read_back_ty i ty : NeNf.pnf M.t =
   | NfNe { ty = _ ; ne } -> 
     M.map (fun x -> NeNf.ne_pnf NeNf.univ x) (read_back_ne i ne)
   | _ -> 
-    M.fail
-    (* failwith "Not a valid code of universe" *)
+    M.fail "Not a valid code of universe"
 
 
 and read_back_pnf i ty t : NeNf.pnf M.t =
@@ -137,11 +133,9 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
     | NfNe { ty = _ ; ne } -> 
       M.map (fun x -> NeNf.ne_pnf NeNf.univ x) (read_back_ne i ne)
     | NfU ->  
-      M.fail
-      (* failwith "Type in Type" *)
+      M.fail "Type in Type"
     | _ -> 
-      M.fail
-      (* failwith "Not a valid code of universe" *)
+      M.fail "Not a valid code of universe"
     end
   | NfBool -> do_ifte i t (M.ret NeNf.btrue) (M.ret NeNf.bfalse)
   | NfNe { ne = ty ; _ } ->
@@ -153,12 +147,9 @@ and read_back_pnf i ty t : NeNf.pnf M.t =
       let* t = read_back_ne i ne in
       M.ret @@ NeNf.ne_pnf ty t
     | _ -> 
-      M.fail
-      (* failwith "Not a valid element of a neutral type" *)
+      M.fail "Not a valid element of a neutral type"
     end
-  | _ -> 
-    M.fail
-    (* failwith "Not a valid type" *)
+  | _ -> M.fail "Not a valid type"
 
 and read_back_ne i ne : NeNf.ne M.t =
   match ne with
