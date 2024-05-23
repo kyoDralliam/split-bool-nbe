@@ -69,7 +69,7 @@ let rec infer (ctx : ctx) (t : IT.itm) : tm M.t =
     let ty = IT.itm_tm ty in
     let* ctx' = push ctx ty in
     let cod0 = infer ctx' body in
-    let* cod = M.filter (fun lvl -> fst lvl = ctx'.len) M.Map.empty cod0 in
+    let* cod = M.filter M.Map.empty (fun lvl -> fst lvl = ctx'.len) cod0 in
     ret @@ Pi { dom = ty ; cod = reify_case_tree cod }
   | App { fn ; arg } ->
     let* fnty = infer ctx fn in

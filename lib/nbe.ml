@@ -85,7 +85,7 @@ and eval i t env =
 (* and read_back_nf i nf = ? *)
 
 and read_back_case_tree i m = 
-  let+ ct = M.filter (fun x -> assert (fst x <= i) ; fst x = i) M.Map.empty m in
+  let+ ct = M.filter M.Map.empty (fun x -> assert (fst x <= i) ; fst x = i) m in
   from_case_tree ct
 
 and read_back_ty i ty : NeNf.pnf M.t =

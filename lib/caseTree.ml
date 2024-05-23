@@ -30,6 +30,17 @@ let rec fold (flbl : 'a -> 'c -> 'c -> 'c) (fleaf : 'b -> 'c) : ('a,'b) case_tre
 
 open Either
 
+let rec forall_paths ct fpath acc =
+  match ct with
+  | Leaf x -> fpath (acc, x)
+  | Split { lbl ; onl ; onr } ->
+    forall_paths onl fpath ((lbl, true) :: acc)
+    && forall_paths onr fpath ((lbl, false) :: acc)
+ 
+
+let forall p ct = forall_paths ct p []
+let (let@) ct fpath = forall_paths ct fpath [] 
+
 let rec paths ct =
   match ct with 
   | Leaf x -> [[], x]

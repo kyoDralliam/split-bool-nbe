@@ -1,26 +1,46 @@
 
+let curry f (x,y) = f x y
+
 module CT = CaseTree
 open CT
 
+module type OrderedPPType =
+sig
+  include Map.OrderedType  
+  val pp : Format.formatter -> t -> unit
+end
+
 module type Splitter = sig
 
-  module O : Map.OrderedType
-  module Map : Map.S with type key = O.t
+  module O : OrderedPPType
+  module Map : sig 
+    include Map.S with type key = O.t 
+    val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
+  end
 
   include Monad.Monad
+
+  (** Actions of the monad *)
+
   val split : O.t -> 'a t -> 'a t -> 'a t
   val case : O.t -> bool t
   val fail : string -> 'a t
 
+  (** Observations on monadic computations *)
 
   (* [filter p m] returns the sub-case tree satisfying the predicate [p].
      [p] should be monotone monotone wrt the order on O.t, that is if [O.compare x y = 1]
      and [p x = true] then [p y = true] *)
-  val filter : (O.t -> bool) -> bool Map.t -> 'a t -> ((O.t,'a) case_tree) t
-
+  val filter : bool Map.t -> (O.t -> bool) -> 'a t -> ((O.t,'a) case_tree) t
 
   val run : bool Map.t -> (string -> (O.t, 'a) case_tree) -> 'a t -> (O.t, 'a) case_tree
 
+  val forall : bool Map.t -> (bool Map.t * 'a -> bool) -> 'a t -> bool
+
+  val equiv : bool Map.t -> 'a t -> 'a t -> bool
+
+  (* The printer breaks the abstraction in the modules (we can observe non-extensional changes).
+    Should that be fixed ?*)
   val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 end
 
@@ -38,17 +58,20 @@ let either_prod (comp : 'e -> 'e -> 'e) (e1 : ('a,'e) Either.t) (e2 : ('b,'e) Ei
   | Right s1, Left _ -> Right s1
   | Left _, Right s2 -> Right s2
 
-module type TreeSplitterParam =
-sig
-  include Map.OrderedType  
-  val pp : Format.formatter -> t -> unit
-end
 
-module TreeSplitter(O : TreeSplitterParam) : Splitter with module O = O =
+module TreeSplitter(O : OrderedPPType) : Splitter with module O = O =
 struct
 
   module O = O
-  module Map = Map.Make(O)
+  
+  (* FIXME: write this as a module once and for all *)
+  module Map = struct 
+    include Map.Make(O)
+    let pp pp_val fmt m = 
+      Format.fprintf fmt "{" ;
+      iter (fun key vl -> Format.fprintf fmt "| %a ↦ %a " O.pp key pp_val vl) m ;
+      Format.fprintf fmt "|}" ;
+  end
 
   module CTE = 
   struct
@@ -70,7 +93,7 @@ struct
     For split, we need to check that the branches are distincts.
     For bind, we re-normalize the result of CaseTree's bind using the function normalize.contents
 
-    An alternative implementation would renormalize only when we observe the type, e.g. on filter and run
+    An alternative implementation that renormalize only when we observe the type, e.g. on filter, run and equiv is provided below
   *)
   include E
 
@@ -131,7 +154,7 @@ struct
       if p lbl then to_case_tree m else Split { lbl ; onl = filter' p onl ; onr = filter' p onr } 
     | Leaf _ -> to_case_tree m
 
-  let filter p _env m = filter' p m
+  let filter _env p m = filter' p m
 
   (* let rec filter p (m : 'a t) : ((O.t,'a) case_tree) t  =
     match m with
@@ -146,7 +169,14 @@ struct
     | Leaf (Either.Left x) -> ret (Leaf x)
     | Leaf (Either.Right s) -> fail s *)
 
-
+  let forall _env p m = 
+    let open CT in
+    let@ (path, x) = m in 
+    match x with
+    | Either.Right _ -> false
+    | Either.Left x ->
+      let m : bool Map.t = List.fold_right (curry Map.add) path Map.empty in
+      p (m, x)
 
   let run env fail m = 
     CT.fold (fun ne onl onr -> 
@@ -155,9 +185,11 @@ struct
       | Some false -> onr
       | None -> Split { lbl = ne ; onl ; onr })
       (function | Either.Right s -> fail s | Either.Left x -> CT.ret x) m
+
+  let equiv _env m1 m2 = m1 = m2 (* the invariant should ensure that m1 and m2 are always equivalent *)
 end
 
-module TreeSplitterLazy(O : TreeSplitterParam) : Splitter with module O = O =
+module TreeSplitterLazy(O : OrderedPPType) : Splitter with module O = O =
 struct
 
   module O = O
@@ -183,13 +215,19 @@ struct
   include E
 
 
-  let pp pp_lbl fmt ct = pp_case_tree O.pp (Format.pp_print_either ~left:pp_lbl ~right:Format.pp_print_string) fmt ct 
 
   let split lbl onl onr = Split { lbl ; onl ; onr}
 
   let case lbl = Split { lbl ; onl = ret true ; onr = ret false }
 
-  module Map = Map.Make(O)
+  module Map = struct 
+    include Map.Make(O)
+    let pp pp_val fmt m = 
+      Format.fprintf fmt "{" ;
+      iter (fun key vl -> Format.fprintf fmt "| %a ↦ %a " O.pp key pp_val vl) m ;
+      Format.fprintf fmt "|}" ;
+  end
+
   module S = Set.Make(O)
 
   let rec eval env m = 
@@ -247,11 +285,27 @@ struct
       if p lbl then to_case_tree fail m else Split { lbl ; onl = filter' p onl ; onr = filter' p onr } 
     | Leaf _ -> to_case_tree fail m
 
-  let filter p env m = filter' p (normalize env m)
+  let filter env p m = filter' p (normalize env m)
+  
+  let forall' m p = 
+    let open CT in
+    let@ (path, x) = m in 
+    match x with
+    | Either.Right _ -> false
+    | Either.Left x ->
+      let m : bool Map.t = List.fold_right (curry Map.add) path Map.empty in
+      p (m, x)
+
+  let forall env p m = forall' (normalize env m) p
+
 
   let run env fail m = 
     CaseTree.fold 
       (fun lbl onl onr -> Split {lbl ; onl ; onr})
       (function Either.Left x -> Leaf x | Either.Right s -> fail s)
       (normalize env m)
+
+  let equiv env m1 m2 = (normalize env m1) = (normalize env m2)
+  
+  let pp pp_lbl fmt ct = pp_case_tree O.pp (Format.pp_print_either ~left:pp_lbl ~right:Format.pp_print_string) fmt ct 
 end

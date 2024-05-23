@@ -154,7 +154,7 @@ struct
     Pi { dom ; cod }
 
   let lam body =
-    (* assert (valid_nf body) ; *)
+    assert (valid_nf body) ;
     Lam body
   let bool = Bool
   let btrue = True

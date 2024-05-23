@@ -23,7 +23,7 @@ let curry f (x,y) = f x y
 let from_case_tree = CT.fold (fun lbl -> NeNf.case (snd lbl)) NeNf.pnf_nf
 
 let rec read_back_case_tree env i m = 
-  let+ ct = M.filter (fun x -> assert (fst x <= i) ; fst x = i) env m in
+  let+ ct = M.filter env (fun x -> assert (fst x <= i) ; fst x = i) m in
   from_case_tree ct
 
 and read_back_bool_ne : type a. bool M.Map.t -> int -> ne -> a M.t -> a M.t -> a M.t =
