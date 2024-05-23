@@ -41,7 +41,7 @@ module type Splitter = sig
 
   (* The printer breaks the abstraction in the modules (we can observe non-extensional changes).
     Should that be fixed ?*)
-  val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
+  val pp : bool Map.t -> (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 end
 
 type comparison = Lt | Eq | Gt
@@ -98,7 +98,7 @@ struct
   include E
 
 
-  let pp pp_lbl fmt ct = pp_case_tree O.pp (Format.pp_print_either ~left:pp_lbl ~right:Format.pp_print_string) fmt ct 
+  let pp _env pp_lbl fmt ct = pp_case_tree O.pp (Format.pp_print_either ~left:pp_lbl ~right:Format.pp_print_string) fmt ct 
 
   let split lbl onl onr =
     if onl = onr then onl else Split { lbl ; onl ; onr}
@@ -263,7 +263,10 @@ struct
     | Some lbl -> 
       let ltrue, lfalse = split_list lbl l in
       let supp' = S.remove lbl supp in
-      Split { lbl ; onl = rebuild ltrue supp' ; onr = rebuild lfalse supp' }
+      let onl = rebuild ltrue supp' in
+      let onr = rebuild lfalse supp' in
+      if onl = onr then onl
+      else Split { lbl ; onl ; onr }
 
 
   let normalize env m = 
@@ -307,5 +310,5 @@ struct
 
   let equiv env m1 m2 = (normalize env m1) = (normalize env m2)
   
-  let pp pp_lbl fmt ct = pp_case_tree O.pp (Format.pp_print_either ~left:pp_lbl ~right:Format.pp_print_string) fmt ct 
+  let pp env pp_lbl fmt ct = pp_case_tree O.pp (Format.pp_print_either ~left:pp_lbl ~right:Format.pp_print_string) fmt (normalize env ct) 
 end

@@ -10,12 +10,12 @@ open Bidir
 module NeNf = Term.NeNf
 
 open D.Quote
-open D.Eval
+module M = D.Quote.M
 module E =  D.Eval.E
+open MN
 
-let (let@) = MN.(let@)
+let guard b err_msg th = if b then th () else M.fail err_msg
 
-let guard b err_msg th = if b then th () else E.fail err_msg
 
 module SCtx = 
 struct
@@ -30,6 +30,7 @@ struct
 
   let push ctx (sty : D.vl E.t) =
     let vari : D.vl E.t = 
+      let open D.Eval in
       let+ ty = sty in 
       let ne = D.NeVar ctx.len in
       D.NfNe {ty ; ne}
@@ -42,9 +43,6 @@ struct
   let force (ne,b) ctx = { ctx with cstr = M.Map.add ne b ctx.cstr}
   let force_all cstrs ctx = List.fold_right force cstrs ctx 
   let force_cstrs cstrs ctx = { ctx with cstr = M.Map.union (fun _ x _ -> Some x) ctx.cstr cstrs }
-
-  let from_ctx (ctx : ctm list) =
-    List.fold_right (fun cty sctx -> push sctx (eval (ctm_tm cty) sctx.env)) ctx empty
 end
 
 
@@ -56,17 +54,27 @@ let success = M.ret ()
 
 let empty_ctx = []
 
-let conv_ty  (ctx : SCtx.t) (a : D.comp) (b : D.comp) =
+type sty = D.vl M.t
+
+let eval ctx t = D.Eval.eval (ctm_tm t) ctx.SCtx.env
+
+let to_sty (ctx : SCtx.t) (vty : D.comp) : sty  =
+  read_back_m ctx.cstr ctx.len M.ret vty
+
+
+
+let conv_ty (ctx : SCtx.t) (a : D.vl M.t) (b : D.vl M.t) =
   (* reify_ty ctx.cstr ctx.len a = reify_ty ctx.cstr ctx.len b *)
   (* ERROR ! We shouldn't be able to compare two M.t structurally !!! They are not yet normalized ! *)
   (* Instead use the provided comparison function *)
-  M.equiv ctx.cstr (reify_ty ctx.cstr ctx.len a) (reify_ty ctx.cstr ctx.len b)
+  let norm_ty ty = M.bind ty (read_back_ty ctx.cstr ctx.len) in
+  M.equiv ctx.cstr (norm_ty a) (norm_ty b)
 
 let rec check_ty (ctx : SCtx.t) (t : ctm) : bool =
   match t with
   | Pi {dom ; cod} -> 
     check_ty ctx dom &&
-    let vdom = eval (ctm_tm dom) ctx.env in
+    let vdom = eval ctx dom in
     check_ty (SCtx.push ctx vdom) cod
   | U -> true
   | Bool -> true
@@ -81,18 +89,17 @@ let rec check_ty (ctx : SCtx.t) (t : ctm) : bool =
     (* should not be a neutral case *)
     end
   | Inj t -> 
-    let tT = infer ctx t in
-    let@ (_cstrs, tT) = read_back_m ctx.cstr ctx.len M.ret tT, ctx.cstr in
+    let@ (_cstrs, tT) = infer ctx t, ctx.cstr in
     tT = D.NfU
   | True | False | Lam _ -> false
 
-and check (ctx : SCtx.t) (t : ctm) (ty : D.comp) : bool =
+and check (ctx : SCtx.t) (t : ctm) (ty : D.vl M.t) : bool =
   match t with
   | Inj t -> 
     let tT = infer ctx t in
     conv_ty ctx tT ty
   | _ -> 
-    let@ (cstrs, ty) = read_back_m ctx.cstr ctx.len M.ret ty, ctx.cstr in
+    let@ (cstrs, ty) = ty, ctx.cstr in
     let ctx = SCtx.force_cstrs cstrs ctx in
     check_head ctx t ty
 
@@ -100,48 +107,49 @@ and check_head (ctx : SCtx.t) (t : ctm) (ty : D.vl): bool =
   match t, ty with
   | Pi {dom ; cod}, NfU -> 
     check_head ctx dom D.NfU &&
-    let vdom = eval (ctm_tm dom) ctx.env in
+    let vdom = eval ctx dom in
     check_head (SCtx.push ctx vdom) cod D.NfU
   | Bool, NfU -> true
   | True, NfBool -> true
   | False, NfBool -> true
   | Lam t, NfPi {dom ; cod} ->
     let ctx' = SCtx.push ctx (E.ret dom) in
-    let vcod : D.comp = do_clos cod (List.hd @@ ctx'.env) in
+    let vcod = to_sty ctx' @@ D.Eval.do_clos cod (List.hd @@ ctx'.env) in
     check ctx' t vcod
   | Inj t, _ -> 
     let tT = infer ctx t in
-    conv_ty ctx tT (E.ret ty)
+    conv_ty ctx tT (M.ret ty)
   | _, _ -> false
 
-and infer (ctx : SCtx.t) (t : itm) : D.comp =
+and infer (ctx : SCtx.t) (t : itm) : sty =
   match t with
   | Var i ->
-    let default = E.fail @@ Format.sprintf "Unbound variable %d" i in
-    Option.value (List.nth_opt ctx.ctx i) ~default
+    let default = M.fail @@ Format.sprintf "Unbound variable %d" i in
+    Option.value (Option.map (to_sty ctx) @@ List.nth_opt ctx.ctx i) ~default
   | App { fn ; arg } ->
     let fnT = infer ctx fn in
-    let isPi (_, ty) = match ty with Either.Left (D.NfPi _) -> true | _ -> false in
+    let isPi (_, ty) = match ty with D.NfPi _ -> true | _ -> false in
     let proj_dom ty = match ty with D.NfPi x -> x.dom | _ -> assert false in
-    guard (CT.forall isPi fnT) "Not a Π" @@ fun () ->
-    let dom = E.map proj_dom fnT in
+    guard (M.forall ctx.cstr isPi fnT) "Not a Π" @@ fun () ->
+    let dom = M.map proj_dom fnT in
     guard (check ctx arg dom) "Domain ill formed"  @@ fun () ->
     let* ty = fnT in 
     begin match ty with 
-    |D.NfPi x -> do_clos x.cod (eval (ctm_tm arg) ctx.env) 
+    | D.NfPi x -> to_sty ctx @@ D.Eval.do_clos x.cod (eval ctx arg) 
     | _ -> assert false
     end
   | Ifte { discr ; brT ; brF } -> 
     guard (check_head ctx discr D.NfBool) "Discriminee is not a bool" @@ fun () ->
-    let* b = eval (ctm_tm discr) ctx.env in
-    begin match b with
-    | D.NfTrue -> infer ctx brT
-    | D.NfFalse -> infer ctx brF
-    | _ -> E.fail "Not a boolean value when typechecking"
+    let* b = to_sty ctx @@ eval ctx discr in
+    let* b = read_back_pnf ctx.cstr ctx.len D.NfBool b in
+    begin match (b :> Tm.tm) with
+    | True -> infer ctx brT
+    | False -> infer ctx brF
+    | _ -> M.fail "Not a boolean value when typechecking"
     end
   | Ascr { tm ; ty } ->
     guard (check_ty ctx ty) "Ascription does not typecheck" @@ fun () ->
-    let vty = eval (ctm_tm ty) ctx.env in 
+    let vty = to_sty ctx @@ eval ctx ty in 
     guard (check ctx tm vty) "Ascription checking failed" @@ fun () ->
     vty
 
@@ -155,7 +163,7 @@ let check_ctx (ctx : ctm list) : SCtx.t option =
   let check_eval_push cty sctxopt = 
     let* sctx = sctxopt in
     if check_ty sctx cty 
-    then Some (SCtx.push sctx (eval (ctm_tm cty) sctx.env))
+    then Some (SCtx.push sctx (eval sctx cty))
     else None
   in
   List.fold_right check_eval_push ctx (Some SCtx.empty)
@@ -164,28 +172,28 @@ let check_ctx (ctx : ctm list) : SCtx.t option =
 let check_full (ctx : ctm list) (tm : ctm) (ty : ctm) : bool =
   Option.value ~default:false @@
   let+ sctx = check_ctx ctx in
-  check_ty sctx ty && check sctx tm (eval (ctm_tm ty) sctx.env)
+  check_ty sctx ty && check sctx tm (to_sty sctx @@ eval sctx ty)
 
-let check_full_debug (ctx : ctm list) (tm : ctm) (ty : ctm) : (SCtx.t * D.comp * bool) option =
+let check_full_debug (ctx : ctm list) (tm : ctm) (ty : ctm) : (SCtx.t * sty * bool) option =
   let+ sctx = check_ctx ctx in
   if check_ty sctx ty
   then
-    let vty = eval (ctm_tm ty) sctx.env in
+    let vty = to_sty sctx @@ eval sctx ty in
     (sctx, vty, check sctx tm vty)
-  else (sctx, E.fail "Not well formed type", false)
+  else (sctx, M.fail "Not well formed type", false)
 
-let infer_full_debug (ctx : ctm list) (tm : itm) : (SCtx.t * D.comp) option =
+let infer_full_debug (ctx : ctm list) (tm : itm) : (SCtx.t * sty) option =
   let+ sctx = check_ctx ctx in
   (sctx, infer sctx tm)
 
 let check_ty_full_debug (ctx : ctm list) (ty : ctm) = 
   let+ sctx = check_ctx ctx in
   let b = check_ty sctx ty in
-  (sctx, b, if b then eval (ctm_tm ty) sctx.env else E.fail "Not well formed type")
+  (sctx, b, if b then eval sctx ty else E.fail "Not well formed type")
 
 let conv_ty_full_debug (ctx : ctm list) (ty1 : ctm) (ty2 : ctm) =
   let+ sctx = check_ctx ctx in
-  let norm_ty t = reify_ty sctx.cstr sctx.len (eval (ctm_tm t) sctx.env) in
+  let norm_ty t = reify_ty sctx.cstr sctx.len (eval sctx t) in
   let ty1 = norm_ty ty1 in
   let ty2 = norm_ty ty2 in
   (sctx, M.equiv sctx.cstr ty1 ty2, ty1, ty2)

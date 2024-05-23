@@ -2,6 +2,7 @@ open Bidir
 
 module D = DomainCbn
 module TC = SemanticTypecheckAlt
+module M = D.Quote.M
 
 (* An instance of a typechecking problem consists of a named context (last entry at the top), a type and a term *)
 
@@ -19,13 +20,13 @@ let print_solution fmt inst =
     Format.pp_print_option ~none (fun fmt (sctx, ty) -> 
       Format.fprintf fmt "Ctx: %a@\nInferred type: %a@\n@\n@\n" 
       TC.SCtx.pp sctx  
-      D.pp_comp ty) fmt res
+      (M.pp sctx.cstr D.pp_vl) ty) fmt res
   | Check { tm ; ty } ->
     let res = TC.check_full_debug ctx tm ty in
     Format.pp_print_option ~none (fun fmt (sctx, ty, b) -> 
       Format.fprintf fmt "Ctx: %a@\nTy: %a@\nResult: %a@\n@\n@\n" 
         TC.SCtx.pp sctx 
-        D.pp_comp ty 
+        (M.pp sctx.cstr D.pp_vl) ty 
         Format.pp_print_bool b) fmt res
   | CheckTy t ->
     let res = TC.check_ty_full_debug ctx t in
@@ -40,8 +41,8 @@ let print_solution fmt inst =
       Format.fprintf fmt "Ctx: %a@\nResult: %a@\nTy1: %a@\nTy2: %a@\n@\n@\n" 
         TC.SCtx.pp sctx 
         Format.pp_print_bool b 
-        (D.Quote.M.pp Tm.NeNf.pp_pnf) nfty1 
-        (D.Quote.M.pp Tm.NeNf.pp_pnf) nfty2) fmt res
+        (M.pp sctx.cstr Tm.NeNf.pp_pnf) nfty1 
+        (M.pp sctx.cstr Tm.NeNf.pp_pnf) nfty2) fmt res
 
 
 (* Typechecks an instance *)

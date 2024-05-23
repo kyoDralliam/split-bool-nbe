@@ -11,7 +11,7 @@ let check_inst (inst : inst) =
 let debug_inst (inst : inst) =
   let (_ctx, _ty, tm, _res) = SemanticTypecheck.check_full_debug (List.map snd inst.ctx) inst.tm inst.ty in
   let open Nbe.M in
-  pp (fun fmt _ -> Format.fprintf fmt "()") Format.std_formatter tm
+  pp Map.empty (fun fmt _ -> Format.fprintf fmt "()") Format.std_formatter tm
 
 (* Printing instances *)
 (* let pp_ctx = 
